@@ -5,8 +5,15 @@ namespace InvoiceApp.Tests;
 
 public class ApprovalServiceTests
 {
-    private static Invoice InvoiceWith(string id, InvoiceStatus status, decimal amount = 100m) =>
-        new() { Id = id, CustomerName = "Test School", Amount = amount, Status = status };
+    private static Invoice InvoiceWith(string id, InvoiceStatus status, decimal amount = 100m, params string[] approvalHistory) =>
+        new()
+        {
+            Id = id,
+            CustomerName = "Test School",
+            Amount = amount,
+            Status = status,
+            ApprovalHistory = approvalHistory.ToList()
+        };
 
     private static ApprovalService ServiceFor(params Invoice[] invoices) =>
         new(new FakeInvoiceRepository(invoices));
@@ -85,14 +92,89 @@ public class ApprovalServiceTests
     }
 
     [Fact]
-    public void Approve_DirectorAboveLimit_ThrowsClearReason()
+    public void Approve_DirectorAboveLimit_KeepInvoicePendingUntilSecondDistinctDirectorApproves()
     {
-        var service = ServiceFor(InvoiceWith("INV-1", InvoiceStatus.PendingApproval, 500_001m));
+        var invoice = InvoiceWith("INV-1", InvoiceStatus.PendingApproval, 500_001m);
+        var service = ServiceFor(invoice);
 
-        var ex = Assert.Throws<InvalidOperationException>(() => service.Approve("INV-1", "demo.director", "Director"));
+        var firstApproval = service.Approve("INV-1", "demo.director", "Director");
 
-        Assert.Contains("500,000", ex.Message);
-        Assert.Contains("Director", ex.Message);
+        Assert.Equal(InvoiceStatus.PendingApproval, firstApproval.Status);
+        Assert.Equal("demo.director", firstApproval.ApprovalHistory.Single());
+
+        var secondApproval = service.Approve("INV-1", "director.two", "Director");
+
+        Assert.Equal(InvoiceStatus.Approved, secondApproval.Status);
+        Assert.Equal(2, secondApproval.ApprovalHistory.Count);
+        Assert.Contains("demo.director", secondApproval.ApprovalHistory);
+        Assert.Contains("director.two", secondApproval.ApprovalHistory);
+    }
+
+    [Fact]
+    public void Approve_HighValueInvoice_SecondApprovalFromManager_RejectsClearReason()
+    {
+        var invoice = InvoiceWith("INV-1", InvoiceStatus.PendingApproval, 600_000m, "director.one");
+        var service = ServiceFor(invoice);
+
+        var ex = Assert.Throws<InvalidOperationException>(() => service.Approve("INV-1", "demo.manager", "Manager"));
+
+        Assert.Contains("Second approver", ex.Message);
+        Assert.Equal(InvoiceStatus.PendingApproval, invoice.Status);
+        Assert.Single(invoice.ApprovalHistory);
+    }
+
+    [Fact]
+    public void Approve_HighValueInvoice_SameDirectorAttemptingTwice_Rejects()
+    {
+        var invoice = InvoiceWith("INV-1", InvoiceStatus.PendingApproval, 600_000m, "director.one");
+        var service = ServiceFor(invoice);
+
+        var ex = Assert.Throws<InvalidOperationException>(() => service.Approve("INV-1", "director.one", "Director"));
+
+        Assert.Contains("already approved", ex.Message);
+        Assert.Equal(InvoiceStatus.PendingApproval, invoice.Status);
+        Assert.Single(invoice.ApprovalHistory);
+    }
+
+    [Fact]
+    public void Approve_HighValueInvoice_FirstApproverRepeatingRequest_Rejects()
+    {
+        var invoice = InvoiceWith("INV-1", InvoiceStatus.PendingApproval, 600_000m, "director.one");
+        var service = ServiceFor(invoice);
+
+        var ex = Assert.Throws<InvalidOperationException>(() => service.Approve("INV-1", "director.one", "Director"));
+
+        Assert.Contains("already approved", ex.Message);
+        Assert.Equal(InvoiceStatus.PendingApproval, invoice.Status);
+        Assert.Single(invoice.ApprovalHistory);
+    }
+
+    [Fact]
+    public void Approve_HighValueInvoice_RejectedSecondApproval_PreservesStatus()
+    {
+        var invoice = InvoiceWith("INV-1", InvoiceStatus.PendingApproval, 600_000m, "director.one");
+        var service = ServiceFor(invoice);
+
+        var ex = Assert.Throws<InvalidOperationException>(() => service.Approve("INV-1", "demo.manager", "Manager"));
+
+        Assert.Contains("Second approver", ex.Message);
+        Assert.Equal(InvoiceStatus.PendingApproval, invoice.Status);
+        Assert.Equal(1, invoice.ApprovalHistory.Count);
+        Assert.Equal("director.one", invoice.ApprovalHistory[0]);
+    }
+
+    [Fact]
+    public void Approve_HighValueInvoice_RejectedSecondApproval_PreservesApprovalHistory()
+    {
+        var invoice = InvoiceWith("INV-1", InvoiceStatus.PendingApproval, 600_000m, "director.one");
+        var service = ServiceFor(invoice);
+
+        var ex = Assert.Throws<InvalidOperationException>(() => service.Approve("INV-1", "demo.manager", "Manager"));
+
+        Assert.Contains("Second approver", ex.Message);
+        Assert.Single(invoice.ApprovalHistory);
+        Assert.Contains("director.one", invoice.ApprovalHistory);
+        Assert.DoesNotContain("demo.manager", invoice.ApprovalHistory);
     }
 
     [Fact]
