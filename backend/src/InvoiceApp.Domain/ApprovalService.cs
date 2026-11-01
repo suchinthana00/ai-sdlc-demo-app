@@ -1,3 +1,5 @@
+using System.Globalization;
+
 namespace InvoiceApp.Domain;
 
 /// <summary>
@@ -6,6 +8,9 @@ namespace InvoiceApp.Domain;
 /// </summary>
 public class ApprovalService
 {
+    private const decimal ManagerApprovalLimit = 50_000m;
+    private const decimal DirectorApprovalLimit = 500_000m;
+
     private readonly IInvoiceRepository _repository;
 
     public ApprovalService(IInvoiceRepository repository)
@@ -28,10 +33,14 @@ public class ApprovalService
         return invoice;
     }
 
-    public Invoice Approve(string invoiceId, string approver)
+    public Invoice Approve(string invoiceId, string approver) =>
+        Approve(invoiceId, approver, "Approver");
+
+    public Invoice Approve(string invoiceId, string approver, string role)
     {
         var invoice = Find(invoiceId);
         EnsurePending(invoice);
+        ValidateApprovalLimit(invoice, role);
 
         invoice.Status = InvoiceStatus.Approved;
         invoice.DecidedBy = approver;
@@ -68,6 +77,21 @@ public class ApprovalService
         {
             throw new InvalidOperationException(
                 $"Invoice {invoice.Id} is {invoice.Status}; only pending invoices can be decided.");
+        }
+    }
+
+    private static void ValidateApprovalLimit(Invoice invoice, string role)
+    {
+        if (string.Equals(role, "Manager", StringComparison.OrdinalIgnoreCase) && invoice.Amount > ManagerApprovalLimit)
+        {
+            throw new InvalidOperationException(
+                $"Manager approval rejected: amount {invoice.Amount.ToString("N2", CultureInfo.InvariantCulture)} exceeds the maximum of {ManagerApprovalLimit.ToString("N2", CultureInfo.InvariantCulture)} for Manager approvals.");
+        }
+
+        if (string.Equals(role, "Director", StringComparison.OrdinalIgnoreCase) && invoice.Amount > DirectorApprovalLimit)
+        {
+            throw new InvalidOperationException(
+                $"Director approval rejected: amount {invoice.Amount.ToString("N2", CultureInfo.InvariantCulture)} exceeds the maximum of {DirectorApprovalLimit.ToString("N2", CultureInfo.InvariantCulture)} for Director approvals.");
         }
     }
 }
