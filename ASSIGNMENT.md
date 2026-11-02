@@ -316,7 +316,10 @@ The main lesson is that real workflow quality depends on evidence, not only on p
 The project root contains the local demo video:
 - `ai_in_sdlc_demo_suchinthana.mp4`
 
-This file is present in the repo root as the project deliverable. If an external hosting link is required for public sharing, that link is still pending and should be added separately. At present, the local file exists in the workspace and is the actual artifact available in the repository.
+Public raw video link:
+- https://github.com/suchinthana00/ai-sdlc-demo-app/raw/refs/heads/features/ai_in_sdlc_demo_suchinthana.mp4
+
+This file is present in the repo root as the project deliverable and is also available via the raw GitHub URL above.
 
 ## 21. Final Deliverables Checklist
 
